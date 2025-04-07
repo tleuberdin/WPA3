@@ -1,4 +1,4 @@
-![image](https://github.com/user-attachments/assets/938886ca-7f3c-49a5-a526-fcc0f815bfd5)# Introduction
+# Introduction
 Software for auditing the security of a wireless WI-FI network using machine learning
 
 # Information
