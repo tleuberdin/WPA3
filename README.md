@@ -1,4 +1,4 @@
-# Introduction
+![image](https://github.com/user-attachments/assets/938886ca-7f3c-49a5-a526-fcc0f815bfd5)# Introduction
 Software for auditing the security of a wireless WI-FI network using machine learning
 
 # Information
@@ -7,10 +7,8 @@ This research was carried out with the financial support of the Science Committe
 # Authors
 Saken Tleuberdin
 Konstantin Malakhov
-Altaibek Mamyr
-
-Айдынов Төлеген Айдынұлы
-Исайнова Алия Насиповна
-Сатыбалдина Дина Жагыпаровна
-Боранбай Жандос Асылханұлы
-Алтайбек Мамыр
+Dina Satybaldina
+Aliya Issainova
+Tolegen Aidynov
+Boranbay Zhandos
+Mamyr Altaibek
