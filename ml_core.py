@@ -1,3 +1,5 @@
+# ml_core.py
+
 import random
 import itertools
 from collections import defaultdict
@@ -17,49 +19,48 @@ class QLearningAgent:
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon_start
-        self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
+
         self.attack_classes = attack_classes or []
-        self.pps_levels = pps_levels or [1, 2, 3]
-        self.threads_levels = threads_levels or [1, 2]
+        self.pps_levels = pps_levels or [1,2,3]
+        self.threads_levels = threads_levels or [1,2]
         self.power_levels = power_levels or [1]
-        self.duration_levels = duration_levels or [1, 2]
+        self.duration_levels = duration_levels or [1,2]
         self.max_combo = max_combo
+
         self.actions = self._generate_action_space()
         self.Q = defaultdict(lambda: defaultdict(float))
         self.history = []
 
+        self.success_history = []
+        self.current_context = None
+
     def _generate_action_space(self):
-        single_actions = []
+        singles = []
         for cls in self.attack_classes:
-            atk_obj = cls()
-            for pps in self.pps_levels:
-                for thr in self.threads_levels:
-                    for pw in self.power_levels:
-                        for dur in self.duration_levels:
-                            single_actions.append((atk_obj, pps, thr, pw, dur))
-        combo_actions = []
-        for size in range(1, self.max_combo + 1):
-            for subset in itertools.combinations(single_actions, size):
-                combo_actions.append(subset)
-        return combo_actions
+            obj = cls()
+            for pps,thr,pw,dur in itertools.product(
+                    self.pps_levels,
+                    self.threads_levels,
+                    self.power_levels,
+                    self.duration_levels):
+                singles.append((obj,pps,thr,pw,dur))
+        combos = []
+        for r in range(1, self.max_combo+1):
+            combos += itertools.combinations(singles, r)
+        return combos
 
     def select_action(self, state):
         if random.random() < self.epsilon:
             return random.choice(self.actions)
-        qvals = self.Q[state]
-        if not qvals:
-            return random.choice(self.actions)
-        best_act = max(qvals, key=qvals.get)
-        return best_act
+        qv = self.Q[state]
+        return random.choice(self.actions) if not qv else max(qv, key=qv.get)
 
     def update_q(self, state, action, reward, next_state):
-        current_q = self.Q[state][action]
-        next_q_vals = self.Q[next_state]
-        max_next = max(next_q_vals.values()) if next_q_vals else 0.0
-        new_q = current_q + self.alpha * (reward + self.gamma * max_next - current_q)
-        self.Q[state][action] = new_q
+        old = self.Q[state][action]
+        nxt = max(self.Q[next_state].values()) if self.Q[next_state] else 0.0
+        self.Q[state][action] = old + self.alpha*(reward + self.gamma*nxt - old)
 
     def decay_epsilon(self):
         if self.epsilon > self.epsilon_end:
@@ -69,15 +70,12 @@ class QLearningAgent:
 
     def record_outcome(self, pred_label, true_label):
         self.history.append((pred_label, true_label))
+        if pred_label==1 and true_label==1 and self.current_context:
+            self.success_history.append(self.current_context)
 
     def compute_metrics(self):
         return calculate_metrics(self.history)
 
     def get_best_action(self, state):
-        qvals = self.Q[state]
-        if not qvals:
-            return None
-        return max(qvals, key=qvals.get)
-
-    def reset_history(self):
-        self.history = []
+        qv = self.Q[state]
+        return None if not qv else max(qv, key=qv.get)

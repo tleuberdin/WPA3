@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-metrics.py - расчёт Accuracy, Precision, Recall, F1.
+metrics.py -  Accuracy, Precision, Recall, F1.
 """
 
 def calculate_metrics(history):
     """
-    history: list of (pred_label, true_label), where 1=succes, 0=no.
-    output data (accuracy, precision, recall, f1).
+    history: list (pred_label, true_label), где 1= success, 0= no.
+    Return (accuracy, precision, recall, f1).
     """
     tp = fp = fn = tn = 0
     for (pred, true) in history:

