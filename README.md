@@ -8,7 +8,4 @@ This research was carried out with the financial support of the Science Committe
 Saken Tleuberdin
 Konstantin Malakhov
 Dina Satybaldina
-Aliya Issainova
-Tolegen Aidynov
-Boranbay Zhandos
-Mamyr Altaibek
+Didar Yedilkhan
